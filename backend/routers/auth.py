@@ -35,7 +35,12 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    return {"message": "User registered", "id": new_user.id, "role": new_user.role}
+    return {
+        "id": new_user.id,
+        "email": new_user.email,
+        "role": new_user.role,
+        "full_name": new_user.full_name,
+    }
 
 @router.post("/login")
 def login(req: LoginRequest, db: Session = Depends(get_db)):

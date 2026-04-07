@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { LoginPage } from '../features/auth/LoginPage';
-import { HomePage } from '../features/home/HomePage';
-import { LandingView } from '../features/landing/LandingView';
 import { DashboardView } from '../features/dashboard/DashboardView';
 import { LibraryView } from '../features/library/LibraryView';
 import { AnalyzeView } from '../features/analyze/AnalyzeView';
@@ -18,29 +16,20 @@ import { getAllUploadedFiles } from '../services/fileUploadService';
 import { useAuth } from '../context/AuthContext';
 
 export default function App() {
-  const [appMode, setAppMode] = useState<'dark' | 'light'>('light'); // Light = proper routing structure
-  
-  const { user } = useAuth();
+  const { user, sessionReady } = useAuth();
   const isSignedIn = !!user;
 
-  // Render state
-  const [showLogin, setShowLogin] = useState(false);
-  const [activeView, setActiveView] = useState<string>('library'); // Start at library to see Sprint 1 features
+  const [activeView, setActiveView] = useState<string>('dashboard');
   const [analyzingResourceId, setAnalyzingResourceId] = useState<string | null>(null);
   const { toast, showToast, hideToast } = useToast();
 
+  // Always use dark theme
   useEffect(() => {
-    // Always use dark theme - remove light theme class
     document.body.classList.remove('light-theme');
-  }, [appMode]);
-
-  const handleGetStarted = () => {
-    setShowLogin(true);
-  };
+  }, []);
 
   const handleLoginSuccess = () => {
-    setShowLogin(false);
-    setActiveView('library');
+    setActiveView('dashboard');
   };
 
   const handleViewChange = (view: string) => {
@@ -51,46 +40,47 @@ export default function App() {
     setAnalyzingResourceId(id);
   };
 
-  const handleAddToPlan = (id: string) => {
+  const handleAddToPlan = (_id: string) => {
     showToast('Material added to study plan', 'success');
   };
 
-  const handleAnalysisComplete = (result: any) => {
+  const handleAnalysisComplete = (_result: any) => {
     showToast('Analysis complete! Material added to library.', 'success');
     setAnalyzingResourceId(null);
   };
 
-  // Use the light mode structure (proper routing) but with dark theme styling
-  // This gives us access to Sprint 1 features with dark UI
+  // Wait for session check to avoid a flash between login ↔ app
+  if (!sessionReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-[#9B7CFF]/30 border-t-[#9B7CFF] rounded-full animate-spin" />
+      </div>
+    );
+  }
 
-  // Show landing page or login page if not signed in
+  // Not signed in → go straight to Login/Register page
   if (!isSignedIn) {
-    if (showLogin) {
-      return <LoginPage onLogin={handleLoginSuccess} />;
-    }
-    return <LandingView onGetStarted={handleGetStarted} />;
+    return <LoginPage onLogin={handleLoginSuccess} />;
   }
 
   return (
     <div className="min-h-screen">
       <div className="flex">
-        {/* Sidebar - Desktop */}
+        {/* Sidebar — Desktop */}
         <Sidebar activeView={activeView} onViewChange={handleViewChange} />
 
         {/* Main Content */}
         <main className="flex-1 p-4 md:p-6 lg:p-8 pb-24 lg:pb-8">
           <div className="max-w-[1320px] mx-auto">
             {activeView === 'dashboard' && <DashboardView onNavigate={handleViewChange} />}
-            {activeView === 'library' && (
-              <LibraryView onAnalyze={handleAnalyze} onAddToPlan={handleAddToPlan} />
-            )}
-            {activeView === 'analyze' && <AnalyzeView />}
-            {activeView === 'planner' && <PlannerView />}
-            {activeView === 'quiz' && <QuizView />}
-            {activeView === 'calendar' && <CalendarView />}
-            {activeView === 'settings' && <SettingsView />}
-            {activeView === 'inbox' && <TeacherInbox />}
-            {activeView === 'admin' && <AdminDashboard />}
+            {activeView === 'library'   && <LibraryView onAnalyze={handleAnalyze} onAddToPlan={handleAddToPlan} />}
+            {activeView === 'analyze'   && <AnalyzeView />}
+            {activeView === 'planner'   && <PlannerView />}
+            {activeView === 'quiz'      && <QuizView />}
+            {activeView === 'calendar'  && <CalendarView />}
+            {activeView === 'settings'  && <SettingsView />}
+            {activeView === 'inbox'     && <TeacherInbox />}
+            {activeView === 'admin'     && <AdminDashboard />}
           </div>
         </main>
 
@@ -105,19 +95,13 @@ export default function App() {
         fileName={`Resource ${analyzingResourceId}`}
         onComplete={handleAnalysisComplete}
         fileMetadata={analyzingResourceId ? (() => {
-          const uploadedFiles = getAllUploadedFiles();
-          const file = uploadedFiles.find(f => f.id === analyzingResourceId);
-          return file?.metadata;
+          const files = getAllUploadedFiles();
+          return files.find(f => f.id === analyzingResourceId)?.metadata;
         })() : undefined}
       />
 
-      {/* Toast Notifications */}
-      <Toast
-        message={toast.message}
-        type={toast.type}
-        isVisible={toast.isVisible}
-        onClose={hideToast}
-      />
+      {/* Toast */}
+      <Toast message={toast.message} type={toast.type} isVisible={toast.isVisible} onClose={hideToast} />
     </div>
   );
 }

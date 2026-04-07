@@ -16,18 +16,37 @@ interface AuthContextType {
   isTeacher: boolean;
   isAdmin: boolean;
   isStudent: boolean;
+  sessionReady: boolean; // true once the initial localStorage check is done
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/** Check if an ID looks like a real UUID (not a legacy demo placeholder) */
+function isValidUserId(id: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('studify_session');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
+    const raw = localStorage.getItem('studify_session');
+    if (raw) {
+      try {
+        const parsed: User = JSON.parse(raw);
+        // Purge stale demo sessions (e.g. "demo-student-id") that would fail DB FK checks
+        if (parsed?.id && isValidUserId(parsed.id)) {
+          setUser(parsed);
+        } else {
+          console.warn('[Auth] Stale demo session detected — clearing localStorage.');
+          localStorage.removeItem('studify_session');
+        }
+      } catch {
+        localStorage.removeItem('studify_session');
+      }
     }
+    setSessionReady(true);
   }, []);
 
   const login = (newUser: User) => {
@@ -40,13 +59,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('studify_session');
   };
 
-  const value = {
+  const value: AuthContextType = {
     user,
     login,
     logout,
     isTeacher: user?.role === 'teacher',
     isAdmin: user?.role === 'admin',
-    isStudent: user?.role === 'student'
+    isStudent: user?.role === 'student',
+    sessionReady,
   };
 
   return (

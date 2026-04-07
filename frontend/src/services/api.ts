@@ -395,3 +395,48 @@ export async function updateUserRole(userId: string, role: string): Promise<void
         body: JSON.stringify({ role }),
     });
 }
+
+export async function registerUser(data: {
+    email: string;
+    password: string;
+    full_name: string;
+    role: string;
+}): Promise<LoginResponse> {
+    return request<LoginResponse>('/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    });
+}
+
+// ─── Quiz Results API ─────────────────────────────────────
+
+export interface QuizResultResponse {
+    _id: string;
+    subject_name: string;
+    score: number;
+    total_questions: number;
+    percentage: number;
+    time_seconds: number;
+    created_at: string;
+}
+
+export async function saveQuizResult(data: {
+    user_id: string;
+    subject_id: string;
+    subject_name: string;
+    score: number;
+    total_questions: number;
+    time_seconds: number;
+}): Promise<{ id: string; message: string }> {
+    return request<{ id: string; message: string }>('/quiz/result', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    });
+}
+
+export async function fetchQuizResults(userId: string): Promise<QuizResultResponse[]> {
+    const res = await request<{ results: QuizResultResponse[] }>(`/quiz/results/${userId}`);
+    return res.results;
+}

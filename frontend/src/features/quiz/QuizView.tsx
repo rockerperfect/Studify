@@ -13,17 +13,25 @@ import {
     Trophy,
     Target,
     Zap,
+    History,
+    TrendingUp,
+    Calendar,
 } from 'lucide-react';
 import {
     fetchSubjects,
     generateQuiz,
+    saveQuizResult,
+    fetchQuizResults,
     type SubjectResponse,
     type QuizQuestionResponse,
+    type QuizResultResponse,
 } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
-type QuizState = 'select' | 'loading' | 'quiz' | 'results';
+type QuizState = 'select' | 'loading' | 'quiz' | 'results' | 'history';
 
 export function QuizView() {
+    const { user } = useAuth();
     const [subjects, setSubjects] = useState<SubjectResponse[]>([]);
     const [quizState, setQuizState] = useState<QuizState>('select');
     const [questions, setQuestions] = useState<QuizQuestionResponse[]>([]);
@@ -33,23 +41,60 @@ export function QuizView() {
     const [selectedSubject, setSelectedSubject] = useState<SubjectResponse | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
+    const [history, setHistory] = useState<QuizResultResponse[]>([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [resultSaved, setResultSaved] = useState(false);
 
-    // Load subjects
     useEffect(() => {
-        fetchSubjects().then(setSubjects).catch(() => { });
+        fetchSubjects().then(setSubjects).catch(() => {});
     }, []);
 
     // Timer during quiz
     useEffect(() => {
         if (quizState !== 'quiz') return;
-        const interval = setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
+        const interval = setInterval(() => setElapsedSeconds(s => s + 1), 1000);
         return () => clearInterval(interval);
     }, [quizState]);
+
+    // Auto-save result when quiz finishes
+    useEffect(() => {
+        if (quizState === 'results' && !resultSaved && user && selectedSubject) {
+            const score = selectedAnswers.filter((ans, i) => ans !== null && ans === questions[i]?.correct_index).length;
+            saveQuizResult({
+                user_id: user.id,
+                subject_id: selectedSubject.id,
+                subject_name: selectedSubject.name,
+                score,
+                total_questions: questions.length,
+                time_seconds: elapsedSeconds,
+            })
+                .then(() => setResultSaved(true))
+                .catch(err => console.warn('Could not save quiz result:', err));
+        }
+    }, [quizState]);
+
+    const loadHistory = async () => {
+        if (!user) return;
+        setHistoryLoading(true);
+        try {
+            const results = await fetchQuizResults(user.id);
+            setHistory(results);
+        } catch {
+            setHistory([]);
+        } finally {
+            setHistoryLoading(false);
+        }
+    };
 
     const formatTime = (seconds: number) => {
         const m = Math.floor(seconds / 60);
         const s = seconds % 60;
         return `${m}:${s.toString().padStart(2, '0')}`;
+    };
+
+    const formatDate = (iso: string) => {
+        const d = new Date(iso);
+        return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     };
 
     const handleStartQuiz = async (subject: SubjectResponse) => {
@@ -60,6 +105,7 @@ export function QuizView() {
         setSelectedAnswers([]);
         setShowExplanation(false);
         setElapsedSeconds(0);
+        setResultSaved(false);
 
         try {
             const qs = await generateQuiz(subject.id, 10);
@@ -73,7 +119,7 @@ export function QuizView() {
     };
 
     const handleSelectAnswer = (optionIndex: number) => {
-        if (selectedAnswers[currentQ] !== null) return; // already answered
+        if (selectedAnswers[currentQ] !== null) return;
         const updated = [...selectedAnswers];
         updated[currentQ] = optionIndex;
         setSelectedAnswers(updated);
@@ -89,12 +135,6 @@ export function QuizView() {
         }
     };
 
-    const handleRetake = () => {
-        if (selectedSubject) {
-            handleStartQuiz(selectedSubject);
-        }
-    };
-
     const handleBackToSubjects = () => {
         setQuizState('select');
         setQuestions([]);
@@ -102,61 +142,57 @@ export function QuizView() {
         setError(null);
     };
 
-    const score = selectedAnswers.filter(
-        (ans, i) => ans !== null && ans === questions[i]?.correct_index
-    ).length;
+    const score = selectedAnswers.filter((ans, i) => ans !== null && ans === questions[i]?.correct_index).length;
 
-    // ─── Subject Selector ────────────────────────────
+    // ─── Select / Home ────────────────────────────────────
     if (quizState === 'select') {
         return (
             <div className="space-y-8 animate-in fade-in duration-500">
-                {/* Header */}
-                <div>
-                    <div className="flex items-center gap-3 mb-2">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--color-primary-violet)] to-[var(--color-primary-blue)] flex items-center justify-center">
-                            <Brain size={20} className="text-white" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">Quiz</h1>
-                            <p className="text-sm text-[var(--color-text-muted)]">
-                                Test your knowledge with AI-generated quizzes
-                            </p>
+                {/* Header with History Tab */}
+                <div className="flex items-start justify-between">
+                    <div>
+                        <div className="flex items-center gap-3 mb-2">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--color-primary-violet)] to-[var(--color-primary-blue)] flex items-center justify-center">
+                                <Brain size={20} className="text-white" />
+                            </div>
+                            <div>
+                                <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">Quiz</h1>
+                                <p className="text-sm text-[var(--color-text-muted)]">Test your knowledge with AI-generated quizzes</p>
+                            </div>
                         </div>
                     </div>
+                    <button
+                        onClick={() => { setQuizState('history'); loadHistory(); }}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl border border-white/15 bg-white/5 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-white/10 transition-all text-sm font-medium"
+                    >
+                        <History size={16} />
+                        Past Results
+                    </button>
                 </div>
 
                 {error && (
-                    <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/10 text-red-300 text-sm">
-                        {error}
-                    </div>
+                    <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/10 text-red-300 text-sm">{error}</div>
                 )}
 
-                {/* Subject Cards */}
                 <div>
-                    <h2 className="text-lg font-semibold text-[var(--color-text-primary)] mb-4">
-                        Choose a Subject
-                    </h2>
+                    <h2 className="text-lg font-semibold text-[var(--color-text-primary)] mb-4">Choose a Subject</h2>
                     {subjects.length === 0 ? (
                         <div className="glass-card rounded-2xl p-12 text-center">
                             <BookOpen size={48} className="mx-auto text-[var(--color-text-muted)] mb-4 opacity-40" />
-                            <p className="text-[var(--color-text-muted)]">
-                                No subjects yet. Upload study materials in the Analyze tab first.
-                            </p>
+                            <p className="text-[var(--color-text-muted)]">No subjects yet. Upload study materials in the Analyze tab first.</p>
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {subjects.map((s) => (
+                            {subjects.map(s => (
                                 <button
                                     key={s.id}
                                     onClick={() => handleStartQuiz(s)}
                                     disabled={s.file_count === 0}
-                                    className={`
-                    group glass-card rounded-2xl p-6 text-left transition-all duration-300
-                    ${s.file_count > 0
+                                    className={`group glass-card rounded-2xl p-6 text-left transition-all duration-300 ${
+                                        s.file_count > 0
                                             ? 'hover:scale-[1.02] hover:shadow-xl hover:shadow-[var(--color-primary-violet)]/10 cursor-pointer'
                                             : 'opacity-50 cursor-not-allowed'
-                                        }
-                  `}
+                                    }`}
                                 >
                                     <div className="flex items-start justify-between mb-4">
                                         <div
@@ -165,27 +201,14 @@ export function QuizView() {
                                         >
                                             {s.name.charAt(0).toUpperCase()}
                                         </div>
-                                        <ChevronRight
-                                            size={20}
-                                            className="text-[var(--color-text-muted)] group-hover:text-[var(--color-primary-violet)] group-hover:translate-x-1 transition-all"
-                                        />
+                                        <ChevronRight size={20} className="text-[var(--color-text-muted)] group-hover:text-[var(--color-primary-violet)] group-hover:translate-x-1 transition-all" />
                                     </div>
-                                    <h3 className="text-lg font-semibold text-[var(--color-text-primary)] mb-1">
-                                        {s.name}
-                                    </h3>
+                                    <h3 className="text-lg font-semibold text-[var(--color-text-primary)] mb-1">{s.name}</h3>
                                     <div className="flex items-center gap-3 text-sm text-[var(--color-text-muted)]">
-                                        <span className="flex items-center gap-1">
-                                            <FileText size={14} /> {s.file_count} file{s.file_count !== 1 ? 's' : ''}
-                                        </span>
-                                        <span className="flex items-center gap-1">
-                                            <Clock size={14} /> {Math.round(s.total_study_time)}m
-                                        </span>
+                                        <span className="flex items-center gap-1"><FileText size={14} /> {s.file_count} file{s.file_count !== 1 ? 's' : ''}</span>
+                                        <span className="flex items-center gap-1"><Clock size={14} /> {Math.round(s.total_study_time)}m</span>
                                     </div>
-                                    {s.file_count === 0 && (
-                                        <p className="text-xs text-[var(--color-text-muted)] mt-2 italic">
-                                            Upload PPT files first
-                                        </p>
-                                    )}
+                                    {s.file_count === 0 && <p className="text-xs text-[var(--color-text-muted)] mt-2 italic">Upload PPT files first</p>}
                                 </button>
                             ))}
                         </div>
@@ -195,7 +218,86 @@ export function QuizView() {
         );
     }
 
-    // ─── Loading ─────────────────────────────────────
+    // ─── History ─────────────────────────────────────────
+    if (quizState === 'history') {
+        return (
+            <div className="max-w-3xl mx-auto space-y-6 animate-in fade-in duration-500">
+                <div className="flex items-center gap-4">
+                    <button
+                        onClick={handleBackToSubjects}
+                        className="text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
+                    >
+                        ← Back
+                    </button>
+                    <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[var(--color-primary-violet)] to-[var(--color-primary-blue)] flex items-center justify-center">
+                            <TrendingUp size={16} className="text-white" />
+                        </div>
+                        <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">Quiz History</h1>
+                    </div>
+                </div>
+
+                {historyLoading ? (
+                    <div className="flex items-center justify-center py-20">
+                        <Loader2 size={32} className="animate-spin text-[var(--color-primary-violet)]" />
+                    </div>
+                ) : history.length === 0 ? (
+                    <div className="glass-card rounded-2xl p-12 text-center">
+                        <History size={48} className="mx-auto text-[var(--color-text-muted)] mb-4 opacity-40" />
+                        <p className="text-[var(--color-text-muted)]">No quiz results yet. Complete a quiz to see your history!</p>
+                    </div>
+                ) : (
+                    <>
+                        {/* Summary Stats */}
+                        <div className="grid grid-cols-3 gap-4">
+                            <div className="glass-card rounded-xl p-4 text-center">
+                                <p className="text-2xl font-bold text-[var(--color-text-primary)]">{history.length}</p>
+                                <p className="text-xs text-[var(--color-text-muted)]">Quizzes Taken</p>
+                            </div>
+                            <div className="glass-card rounded-xl p-4 text-center">
+                                <p className="text-2xl font-bold text-emerald-400">
+                                    {Math.round(history.reduce((sum, r) => sum + r.percentage, 0) / history.length)}%
+                                </p>
+                                <p className="text-xs text-[var(--color-text-muted)]">Avg Score</p>
+                            </div>
+                            <div className="glass-card rounded-xl p-4 text-center">
+                                <p className="text-2xl font-bold text-[var(--color-primary-violet)]">
+                                    {Math.max(...history.map(r => r.percentage))}%
+                                </p>
+                                <p className="text-xs text-[var(--color-text-muted)]">Best Score</p>
+                            </div>
+                        </div>
+
+                        {/* Result Cards */}
+                        <div className="space-y-3">
+                            {history.map((r, i) => {
+                                const emoji = r.percentage >= 80 ? '🏆' : r.percentage >= 60 ? '👍' : r.percentage >= 40 ? '📖' : '💪';
+                                const color = r.percentage >= 80 ? 'emerald' : r.percentage >= 60 ? 'blue' : r.percentage >= 40 ? 'yellow' : 'red';
+                                return (
+                                    <div key={r._id} className="glass-card rounded-xl p-5 flex items-center gap-4">
+                                        <div className="text-2xl">{emoji}</div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-semibold text-[var(--color-text-primary)] truncate">{r.subject_name}</p>
+                                            <div className="flex items-center gap-3 mt-1 text-xs text-[var(--color-text-muted)]">
+                                                <span className="flex items-center gap-1"><Calendar size={11} /> {formatDate(r.created_at)}</span>
+                                                <span className="flex items-center gap-1"><Clock size={11} /> {formatTime(r.time_seconds)}</span>
+                                            </div>
+                                        </div>
+                                        <div className="text-right shrink-0">
+                                            <p className={`text-xl font-bold text-${color}-400`}>{r.percentage}%</p>
+                                            <p className="text-xs text-[var(--color-text-muted)]">{r.score}/{r.total_questions} correct</p>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </>
+                )}
+            </div>
+        );
+    }
+
+    // ─── Loading ─────────────────────────────────────────
     if (quizState === 'loading') {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 animate-in fade-in duration-500">
@@ -206,18 +308,14 @@ export function QuizView() {
                     <Loader2 size={64} className="absolute -top-5 -left-5 text-[var(--color-primary-violet)]/30 animate-spin" />
                 </div>
                 <div className="text-center">
-                    <h2 className="text-xl font-bold text-[var(--color-text-primary)] mb-2">
-                        Generating Quiz…
-                    </h2>
-                    <p className="text-[var(--color-text-muted)]">
-                        AI is crafting questions from <strong>{selectedSubject?.name}</strong> materials
-                    </p>
+                    <h2 className="text-xl font-bold text-[var(--color-text-primary)] mb-2">Generating Quiz…</h2>
+                    <p className="text-[var(--color-text-muted)]">AI is crafting questions from <strong>{selectedSubject?.name}</strong> materials</p>
                 </div>
             </div>
         );
     }
 
-    // ─── Quiz Mode ───────────────────────────────────
+    // ─── Quiz Mode ───────────────────────────────────────
     if (quizState === 'quiz') {
         const q = questions[currentQ];
         const answered = selectedAnswers[currentQ] !== null;
@@ -226,19 +324,10 @@ export function QuizView() {
             <div className="max-w-3xl mx-auto space-y-6 animate-in fade-in duration-300">
                 {/* Top bar */}
                 <div className="flex items-center justify-between">
-                    <button
-                        onClick={handleBackToSubjects}
-                        className="text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
-                    >
-                        ← Back
-                    </button>
+                    <button onClick={handleBackToSubjects} className="text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors">← Back</button>
                     <div className="flex items-center gap-4 text-sm text-[var(--color-text-muted)]">
-                        <span className="flex items-center gap-1">
-                            <Clock size={14} /> {formatTime(elapsedSeconds)}
-                        </span>
-                        <span className="font-medium text-[var(--color-text-primary)]">
-                            {currentQ + 1} / {questions.length}
-                        </span>
+                        <span className="flex items-center gap-1"><Clock size={14} /> {formatTime(elapsedSeconds)}</span>
+                        <span className="font-medium text-[var(--color-text-primary)]">{currentQ + 1} / {questions.length}</span>
                     </div>
                 </div>
 
@@ -256,78 +345,56 @@ export function QuizView() {
                         <span className="flex-shrink-0 w-8 h-8 rounded-lg bg-[var(--color-primary-violet)]/20 flex items-center justify-center text-sm font-bold text-[var(--color-primary-violet)]">
                             {currentQ + 1}
                         </span>
-                        <h2 className="text-lg font-semibold text-[var(--color-text-primary)] leading-relaxed">
-                            {q.question}
-                        </h2>
+                        <h2 className="text-lg font-semibold text-[var(--color-text-primary)] leading-relaxed">{q.question}</h2>
                     </div>
 
-                    {/* Options */}
                     <div className="space-y-3">
                         {q.options.map((option, i) => {
                             const isSelected = selectedAnswers[currentQ] === i;
                             const isCorrect = answered && i === q.correct_index;
                             const isWrong = answered && isSelected && i !== q.correct_index;
-
                             return (
                                 <button
                                     key={i}
                                     onClick={() => handleSelectAnswer(i)}
                                     disabled={answered}
-                                    className={`
-                    w-full text-left p-4 rounded-xl border transition-all duration-300
-                    ${!answered
+                                    className={`w-full text-left p-4 rounded-xl border transition-all duration-300 ${
+                                        !answered
                                             ? 'border-white/10 bg-white/5 hover:border-[var(--color-primary-violet)]/50 hover:bg-[var(--color-primary-violet)]/10 cursor-pointer'
                                             : isCorrect
                                                 ? 'border-emerald-400/50 bg-emerald-500/15'
                                                 : isWrong
                                                     ? 'border-red-400/50 bg-red-500/15'
                                                     : 'border-white/5 bg-white/3 opacity-60'
-                                        }
-                  `}
+                                    }`}
                                 >
                                     <div className="flex items-center gap-3">
-                                        <span
-                                            className={`
-                        flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-sm font-semibold
-                        ${!answered
-                                                    ? 'bg-white/10 text-[var(--color-text-muted)]'
-                                                    : isCorrect
-                                                        ? 'bg-emerald-500 text-white'
-                                                        : isWrong
-                                                            ? 'bg-red-500 text-white'
-                                                            : 'bg-white/10 text-[var(--color-text-muted)]'
-                                                }
-                      `}
-                                        >
-                                            {answered && isCorrect ? (
-                                                <CheckCircle2 size={16} />
-                                            ) : answered && isWrong ? (
-                                                <XCircle size={16} />
-                                            ) : (
-                                                String.fromCharCode(65 + i)
-                                            )}
+                                        <span className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-sm font-semibold ${
+                                            !answered ? 'bg-white/10 text-[var(--color-text-muted)]'
+                                                : isCorrect ? 'bg-emerald-500 text-white'
+                                                : isWrong ? 'bg-red-500 text-white'
+                                                : 'bg-white/10 text-[var(--color-text-muted)]'
+                                        }`}>
+                                            {answered && isCorrect ? <CheckCircle2 size={16} />
+                                                : answered && isWrong ? <XCircle size={16} />
+                                                : String.fromCharCode(65 + i)}
                                         </span>
-                                        <span className={`text-[var(--color-text-primary)] ${isCorrect ? 'font-semibold' : ''}`}>
-                                            {option}
-                                        </span>
+                                        <span className={`text-[var(--color-text-primary)] ${isCorrect ? 'font-semibold' : ''}`}>{option}</span>
                                     </div>
                                 </button>
                             );
                         })}
                     </div>
 
-                    {/* Explanation */}
                     {showExplanation && q.explanation && (
                         <div className="mt-6 p-4 rounded-xl bg-[var(--color-primary-violet)]/10 border border-[var(--color-primary-violet)]/20 animate-in slide-in-from-bottom-2 duration-300">
                             <p className="text-sm text-[var(--color-text-secondary)]">
-                                <strong className="text-[var(--color-primary-violet)]">Explanation:</strong>{' '}
-                                {q.explanation}
+                                <strong className="text-[var(--color-primary-violet)]">Explanation:</strong>{' '}{q.explanation}
                             </p>
                         </div>
                     )}
                 </div>
 
-                {/* Next button */}
                 {answered && (
                     <div className="flex justify-end animate-in fade-in duration-300">
                         <button
@@ -343,21 +410,19 @@ export function QuizView() {
         );
     }
 
-    // ─── Results ─────────────────────────────────────
+    // ─── Results ─────────────────────────────────────────
     if (quizState === 'results') {
         const percentage = Math.round((score / questions.length) * 100);
         const emoji = percentage >= 80 ? '🏆' : percentage >= 60 ? '👍' : percentage >= 40 ? '📖' : '💪';
-        const title = percentage >= 80 ? 'Excellent!' : percentage >= 60 ? 'Good Job!' : percentage >= 40 ? 'Keep Studying' : 'Don\'t Give Up!';
+        const title = percentage >= 80 ? 'Excellent!' : percentage >= 60 ? 'Good Job!' : percentage >= 40 ? 'Keep Studying' : "Don't Give Up!";
 
         return (
             <div className="max-w-3xl mx-auto space-y-8 animate-in fade-in duration-500">
-                {/* Score Header */}
                 <div className="glass-card rounded-2xl p-8 text-center">
                     <div className="text-5xl mb-3">{emoji}</div>
                     <h1 className="text-2xl font-bold text-[var(--color-text-primary)] mb-1">{title}</h1>
-                    <p className="text-[var(--color-text-muted)] mb-6">
-                        {selectedSubject?.name} Quiz Complete
-                    </p>
+                    <p className="text-[var(--color-text-muted)] mb-2">{selectedSubject?.name} Quiz Complete</p>
+                    {resultSaved && <p className="text-xs text-emerald-400 mb-4">✓ Result saved to your history</p>}
 
                     {/* Score ring */}
                     <div className="relative w-36 h-36 mx-auto mb-6">
@@ -382,7 +447,6 @@ export function QuizView() {
                         </div>
                     </div>
 
-                    {/* Stats row */}
                     <div className="grid grid-cols-3 gap-4 max-w-md mx-auto">
                         <div className="p-3 rounded-xl bg-emerald-500/10">
                             <Trophy size={18} className="mx-auto mb-1 text-emerald-400" />
@@ -403,9 +467,16 @@ export function QuizView() {
                 </div>
 
                 {/* Actions */}
-                <div className="flex justify-center gap-3">
+                <div className="flex justify-center gap-3 flex-wrap">
                     <button
-                        onClick={handleRetake}
+                        onClick={() => { setQuizState('history'); loadHistory(); }}
+                        className="px-5 py-3 rounded-xl border border-white/15 bg-white/5 text-[var(--color-text-primary)] font-semibold hover:bg-white/10 transition-all flex items-center gap-2"
+                    >
+                        <History size={16} />
+                        View History
+                    </button>
+                    <button
+                        onClick={() => selectedSubject && handleStartQuiz(selectedSubject)}
                         className="px-5 py-3 rounded-xl border border-white/15 bg-white/5 text-[var(--color-text-primary)] font-semibold hover:bg-white/10 transition-all flex items-center gap-2"
                     >
                         <RotateCcw size={16} />
@@ -420,44 +491,28 @@ export function QuizView() {
                     </button>
                 </div>
 
-                {/* Question Review */}
+                {/* Review */}
                 <div>
-                    <h2 className="text-lg font-semibold text-[var(--color-text-primary)] mb-4">
-                        Review Answers
-                    </h2>
+                    <h2 className="text-lg font-semibold text-[var(--color-text-primary)] mb-4">Review Answers</h2>
                     <div className="space-y-3">
                         {questions.map((q, i) => {
                             const userAnswer = selectedAnswers[i];
                             const isCorrect = userAnswer === q.correct_index;
                             return (
-                                <div
-                                    key={i}
-                                    className={`
-                    glass-card rounded-xl p-5 border-l-4 transition-all
-                    ${isCorrect ? 'border-l-emerald-400' : 'border-l-red-400'}
-                  `}
-                                >
+                                <div key={i} className={`glass-card rounded-xl p-5 border-l-4 ${isCorrect ? 'border-l-emerald-400' : 'border-l-red-400'}`}>
                                     <div className="flex items-start gap-3 mb-2">
-                                        {isCorrect ? (
-                                            <CheckCircle2 size={20} className="text-emerald-400 flex-shrink-0 mt-0.5" />
-                                        ) : (
-                                            <XCircle size={20} className="text-red-400 flex-shrink-0 mt-0.5" />
-                                        )}
+                                        {isCorrect
+                                            ? <CheckCircle2 size={20} className="text-emerald-400 flex-shrink-0 mt-0.5" />
+                                            : <XCircle size={20} className="text-red-400 flex-shrink-0 mt-0.5" />}
                                         <div className="flex-1">
-                                            <p className="font-medium text-[var(--color-text-primary)] text-sm">
-                                                {i + 1}. {q.question}
-                                            </p>
+                                            <p className="font-medium text-[var(--color-text-primary)] text-sm">{i + 1}. {q.question}</p>
                                             {!isCorrect && (
                                                 <p className="text-xs text-red-300 mt-1">
                                                     Your answer: {q.options[userAnswer!]} →{' '}
-                                                    <span className="text-emerald-300">
-                                                        Correct: {q.options[q.correct_index]}
-                                                    </span>
+                                                    <span className="text-emerald-300">Correct: {q.options[q.correct_index]}</span>
                                                 </p>
                                             )}
-                                            {q.explanation && (
-                                                <p className="text-xs text-[var(--color-text-muted)] mt-1">{q.explanation}</p>
-                                            )}
+                                            {q.explanation && <p className="text-xs text-[var(--color-text-muted)] mt-1">{q.explanation}</p>}
                                         </div>
                                     </div>
                                 </div>
