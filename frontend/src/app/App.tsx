@@ -70,8 +70,8 @@ export default function App() {
         <Sidebar activeView={activeView} onViewChange={handleViewChange} />
 
         {/* Main Content */}
-        <main className="flex-1 p-4 md:p-6 lg:p-8 pb-24 lg:pb-8">
-          <div className="max-w-[1320px] mx-auto">
+        <main className="flex-1 w-full min-w-0 p-4 md:p-6 lg:p-8 pb-24 lg:pb-8 overflow-x-hidden">
+          <div className="max-w-[1320px] mx-auto w-full">
             {activeView === 'dashboard' && <DashboardView onNavigate={handleViewChange} />}
             {activeView === 'library'   && <LibraryView onAnalyze={handleAnalyze} onAddToPlan={handleAddToPlan} />}
             {activeView === 'analyze'   && <AnalyzeView />}
