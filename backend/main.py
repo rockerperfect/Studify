@@ -35,12 +35,14 @@ allowed_origins = [
     "http://localhost:3000",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:5174",
+    # Production frontend
+    "https://studify-iota.vercel.app",
 ]
 
-# Add production URL from environment
+# Also allow any extra origins from environment (comma-separated)
 env_origins = os.getenv("ALLOWED_ORIGINS")
 if env_origins:
-    allowed_origins.extend([origin.strip() for origin in env_origins.split(",")])
+    allowed_origins.extend([o.strip() for o in env_origins.split(",")])
 
 app.add_middleware(
     CORSMiddleware,

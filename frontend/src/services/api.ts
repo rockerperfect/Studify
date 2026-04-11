@@ -3,7 +3,10 @@
  * All requests go through the Vite proxy (/api → backend).
  */
 
-const API_BASE = (import.meta as any).env.VITE_API_URL || '/api';
+// In production, VITE_API_URL = https://studify-9rys.onrender.com/api
+// In development, requests proxy through Vite, so we use '/api'
+const _rawBase = (import.meta as any).env.VITE_API_URL as string | undefined;
+const API_BASE = _rawBase ? _rawBase.replace(/\/$/, '') : '/api';
 
 // ─── Generic helpers ─────────────────────────────────────
 
