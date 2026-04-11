@@ -35,8 +35,6 @@ allowed_origins = [
     "http://localhost:3000",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:5174",
-    # Production frontend
-    "https://studify-iota.vercel.app",
 ]
 
 # Also allow any extra origins from environment (comma-separated)
@@ -47,6 +45,8 @@ if env_origins:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    # Allow ALL Vercel preview + production URLs (e.g. studify-*.vercel.app)
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
