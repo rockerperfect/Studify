@@ -164,8 +164,8 @@ def generate_timetable(
                 if session_dur < MIN_SESSION_MINUTES:
                     break
 
-                start_hour = slot_start + current_minute_in_slot // 60
-                start_min = current_minute_in_slot % 60
+                start_hour = int(slot_start + current_minute_in_slot // 60)
+                start_min = int(current_minute_in_slot % 60)
 
                 session = {
                     "id": str(uuid.uuid4()),
