@@ -44,13 +44,36 @@ async def create_quiz(request: QuizRequest, db: Session = Depends(get_db)):
             detail="No files uploaded for this subject. Upload study materials first.",
         )
 
+    import os
+    import requests
+    from io import BytesIO
+    from services.supabase_service import get_public_url
+
     all_text_parts: list[str] = []
     for f in files:
-        if f.file_type == "ppt" and f.storage_path:
+        if f.file_type == "ppt" and f.file_name:
             try:
-                parse_result = parse_pptx(f.storage_path)
-                if parse_result.full_text:
-                    all_text_parts.append(f"--- {f.original_name} ---\n{parse_result.full_text}")
+                # Determine source: local disk or downloaded from cloud
+                file_source = None
+                
+                # Try local disk first
+                if f.storage_path and os.path.exists(f.storage_path):
+                    file_source = f.storage_path
+                else:
+                    # Cloud fallback for ephemeral disk environments (Render)
+                    cloud_url = get_public_url(f"materials/{f.file_name}")
+                    if cloud_url:
+                        logger.info(f"Downloading {f.file_name} from cloud for analysis...")
+                        resp = requests.get(cloud_url)
+                        if resp.status_code == 200:
+                            file_source = BytesIO(resp.content)
+                
+                if file_source:
+                    parse_result = parse_pptx(file_source)
+                    if parse_result.full_text:
+                        all_text_parts.append(f"--- {f.original_name} ---\n{parse_result.full_text}")
+                else:
+                    logger.warning(f"File {f.original_name} could not be located on disk or cloud")
             except Exception as e:
                 logger.warning(f"Could not parse {f.original_name}: {e}")
 
